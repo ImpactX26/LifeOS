@@ -37,13 +37,19 @@ npm run dev
 
 Open http://localhost:5173 → **Ask** → plug in **Finance** → **Ask** again → the verdict flips.
 
-**MCP servers:** calendar :8101 · gmail :8102 · finance :8103, each at `http://localhost:<port>/mcp`:
+**Full stack** (three terminals, all from the repo root with `.venv` active):
 
 ```bash
-.venv\Scripts\python run_servers.py
+python run_servers.py
+python backend\main.py
+cd frontend; npm run dev
 ```
 
-Calendar and Gmail use seeded data until someone signs in to the Manu demo account (see [docs/GOOGLE_SETUP.md](docs/GOOGLE_SETUP.md)). Run the tests with `pytest -q`.
+- **`run_servers.py`** starts the MCP servers: calendar :8101 · gmail :8102 · finance :8103 · travel :8104, each at `http://127.0.0.1:<port>/mcp`.
+- **`backend\main.py`** is the API on :8000: `POST /ask`, `GET /servers`, `POST /servers/{name}/plug|unplug`.
+- **The frontend** runs at http://localhost:5173. The pill shows `live · mcp servers` when it's connected to the API, and `api offline · mock data` when it has fallen back to the mock data.
+
+Calendar and Gmail use seeded data until someone signs in to the Manu demo account (see [docs/GOOGLE_SETUP.md](docs/GOOGLE_SETUP.md)). To force seeded data, set `$env:LIFEOS_OFFLINE=1` before `run_servers.py`; this is the save-the-demo switch. Run the tests with `pytest -q`.
 
 ## Team
 

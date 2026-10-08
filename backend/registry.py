@@ -22,6 +22,7 @@ SERVERS = {
     "calendar": "http://127.0.0.1:8101/mcp",
     "gmail": "http://127.0.0.1:8102/mcp",
     "finance": "http://127.0.0.1:8103/mcp",
+    "travel": "http://127.0.0.1:8104/mcp",
 }
 TIMEOUT_S = 10  # a cold live Gmail fetch takes ~3 s
 

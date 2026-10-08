@@ -5,6 +5,7 @@ One-time login (opens a browser; YOU sign in, LifeOS never sees the password):
 Saves token.json next to credentials.json in the repo root (both gitignored).
 Servers call creds(); None means "not signed in" and they fall back to seeded data.
 """
+import os
 import sys
 from pathlib import Path
 
@@ -19,7 +20,7 @@ SCOPES = [
 
 def creds():
     """Valid read-only credentials, or None. Never opens a browser."""
-    if not TOKEN.exists():
+    if os.getenv("LIFEOS_OFFLINE") or not TOKEN.exists():  # LIFEOS_OFFLINE=1: force seeded data (tests, save-the-demo)
         return None
     try:
         from google.auth.transport.requests import Request

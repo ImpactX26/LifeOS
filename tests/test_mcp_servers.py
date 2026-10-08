@@ -10,8 +10,10 @@ sys.path.insert(0, str(ROOT / "mcp_servers"))
 import calendar_server  # noqa: E402
 import finance_server  # noqa: E402
 import gmail_server  # noqa: E402
+import travel_server  # noqa: E402
 
 LOCKED = {
+    "travel": {"search_flights"},
     "calendar": {"list_events", "find_free_slots"},
     "gmail": {"list_tasks", "get_deadlines"},
     "finance": {"get_balance", "set_balance", "get_sips", "get_spending_summary", "get_cost_table"},
@@ -26,7 +28,7 @@ def offline(monkeypatch):
 
 
 def test_locked_tool_names_and_write_flags():
-    for server in (calendar_server, gmail_server, finance_server):
+    for server in (calendar_server, gmail_server, finance_server, travel_server):
         tools = asyncio.run(server.mcp.list_tools())
         assert {t.name for t in tools} == LOCKED[server.mcp.name]
         writes = {t.name for t in tools if not t.annotations.readOnlyHint}
@@ -70,6 +72,14 @@ def test_gmail_returns_only_deadline_emails_masked():
         assert leak not in text
     # The injection arrives as plain data; Guardian (not this server) stops the set_balance call.
     assert any("Ignore all previous instructions" in t["snippet"] for t in r["tasks"])
+
+
+def test_travel_seeded_and_labelled():
+    r = travel_server.search_flights("blr", "GOI", "2026-10-10")
+    assert (r["source"], len(r["results"]), min(f["price"] for f in r["results"])) == ("seeded", 3, 3899)
+    assert travel_server.search_flights("BLR", "GOI", "2026-12-25")["results"] == []
+    with pytest.raises(ValueError):
+        travel_server.search_flights("Bangalore", "GOI", "2026-10-10")
 
 
 def test_gmail_deadline_formats():

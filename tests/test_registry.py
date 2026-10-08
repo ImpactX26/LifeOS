@@ -1,8 +1,5 @@
 import asyncio
-import socket
-import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -11,24 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 from registry import Registry  # noqa: E402
 
-
-def _open(port):
-    with socket.socket() as s:
-        return s.connect_ex(("127.0.0.1", port)) == 0
-
-
-@pytest.fixture(scope="module", autouse=True)
-def servers():
-    # Real MCP servers over HTTP. If run_servers.py is already up, those answer instead (these exit on bind).
-    procs = [subprocess.Popen([sys.executable, str(p)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-             for p in sorted((ROOT / "mcp_servers").glob("*_server.py"))]
-    deadline = time.time() + 20
-    while not all(_open(p) for p in (8101, 8102, 8103)):
-        assert time.time() < deadline, "MCP servers did not start"
-        time.sleep(0.2)
-    yield
-    for p in procs:
-        p.terminate()
+pytestmark = pytest.mark.usefixtures("mcp_servers")  # tests/conftest.py
 
 
 def test_hot_plug_adds_finance_tools():
