@@ -2,17 +2,18 @@ import { Pill } from './ui.jsx'
 
 const LOOK = {
   off: ['border-dashed bg-cream text-ink/50', 'unplugged', 'bg-cream'],
+  down: ['bg-danger/15', 'offline', 'bg-danger text-white'],
   idle: ['bg-white', 'connected', 'bg-white'],
   reading: ['bg-orange animate-pulse-read', 'reading…', 'bg-white'],
   read: ['bg-lime', '✓ read', 'bg-white'],
 }
 
-export default function ServerStrip({ servers, plugged, lit, reading, onToggle, disabled }) {
+export default function ServerStrip({ servers, plugged, lit, reading, onToggle, disabled, offline = [] }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
       {servers.map((s) => {
         const on = plugged.includes(s)
-        const state = !on ? 'off' : reading === s ? 'reading' : lit.includes(s) ? 'read' : 'idle'
+        const state = !on ? 'off' : offline.includes(s) ? 'down' : reading === s ? 'reading' : lit.includes(s) ? 'read' : 'idle'
         const [box, label, pill] = LOOK[state]
         return (
           <div key={s} className={`border-3 border-ink p-3 shadow-hard-sm transition-colors ${box}`}>

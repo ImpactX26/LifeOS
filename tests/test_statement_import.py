@@ -24,21 +24,26 @@ def test_only_necessary_columns_survive(tmp_path):
     text = dst.read_text(encoding="utf-8")
 
     assert text.splitlines() == [
-        "date,category,debit,credit",
-        "2026-08-01,Income,,50000",
-        "2026-08-02,Friends (split-back),,660",
-        "2026-08-03,Club,2440,",
+        "date,category,debit,credit,balance",  # the running balance stays: LifeOS's current balance is the last one
+        "2026-08-01,Income,,50000,62000",
+        "2026-08-02,Friends (split-back),,660,62660",
+        "2026-08-03,Club,2440,,60220",
     ]
-    for secret in ("ACME", "Ananya", "okicici", "1234567890", "512398765432", "4321", "62000", "62660"):
+    for secret in ("ACME", "Ananya", "okicici", "1234567890", "512398765432", "4321"):
         assert secret not in text
     assert receipt["rejected"] == [{"line": 5, "reason": "could not convert string to float: 'abc'"}]
-    assert set(receipt["dropped_columns"]) == {"Description", "Balance"}
+    assert receipt["dropped_columns"] == ["Description"]
 
 
-def test_masked_fixture_reproduces_locked_numbers():
-    with open(ROOT / "data" / "manu_statement.masked.csv", encoding="utf-8") as f:
-        rows = list(csv.DictReader(f))
-    months = len({r["date"][:7] for r in rows})
+def test_sample_statement_keeps_the_briefs_numbers(tmp_path):
+    # data/samples/manu_statement.csv: 9 Jul - 8 Oct. Its Aug-Sep is the team brief's statement, unchanged.
+    receipt = mask_statement(ROOT / "data" / "samples" / "manu_statement.csv", tmp_path / "out.csv")
+    assert (receipt["rows_kept"], receipt["rejected"], receipt["dropped_columns"]) == (245, [], ["Narration", "Mode"])
+    with open(tmp_path / "out.csv", encoding="utf-8") as f:
+        rows = [r for r in csv.DictReader(f) if r["date"][:7] in ("2026-08", "2026-09")]
+    assert "Uncategorized" not in {r["category"] for r in rows}
+    assert rows[-1]["balance"] == "21842"  # 30 Sep, as in the brief
+    months = 2
     fixed = {"Rent (PG, incl. food)", "Investments (SIP)", "Subscriptions", "Phone"}
 
     def spend(cats=None):

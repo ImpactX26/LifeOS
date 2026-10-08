@@ -2,7 +2,8 @@ import { Pill, Window } from './ui.jsx'
 
 const SOURCE_COLOR = { live: 'bg-lime', user_entered: 'bg-orange' }
 
-export default function Receipt({ verdict }) {
+export default function Receipt({ verdict, trace = [] }) {
+  const blocked = trace.filter((t) => t.guardian && t.guardian !== 'allowed')
   return (
     <Window title="// data_receipt.log">
       {!verdict ? (
@@ -11,8 +12,8 @@ export default function Receipt({ verdict }) {
         <>
           <h3 className="text-xs font-bold uppercase">// read ({verdict.evidence.length})</h3>
           <ul className="mt-2 space-y-3">
-            {verdict.evidence.map((e) => (
-              <li key={`${e.server}.${e.tool}`} className="border-l-4 border-ink pl-3">
+            {verdict.evidence.map((e, i) => (
+              <li key={i} className="border-l-4 border-ink pl-3">
                 <div className="text-xs font-bold uppercase">
                   {e.server} · {e.tool}
                 </div>
@@ -24,6 +25,23 @@ export default function Receipt({ verdict }) {
               </li>
             ))}
           </ul>
+
+          {blocked.length > 0 && (
+            <>
+              <h3 className="mt-5 text-xs font-bold uppercase text-danger">// blocked by guardian ({blocked.length})</h3>
+              <ul className="mt-2 space-y-2">
+                {blocked.map((t, i) => (
+                  <li key={i} className="border-l-4 border-danger pl-3 text-sm">
+                    <span className="font-bold uppercase">{t.server} · {t.tool}</span> {JSON.stringify(t.args)}
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      <Pill className="bg-danger text-white">blocked</Pill>
+                      <Pill>{t.error}</Pill>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
 
           <h3 className="mt-5 text-xs font-bold uppercase">// not read</h3>
           <div className="mt-2 flex flex-wrap gap-2">

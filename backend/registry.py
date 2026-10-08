@@ -10,6 +10,7 @@ Try it (servers must be running first:  .venv\\Scripts\\python run_servers.py):
 """
 import asyncio
 import json
+import os
 import time
 from contextlib import asynccontextmanager
 
@@ -18,12 +19,10 @@ from mcp.client.streamable_http import streamable_http_client
 
 # Where each MCP server lives. This is config (like an MCP client config file), not decision logic.
 # 127.0.0.1, not "localhost": on Windows, localhost tries IPv6 first and costs ~1.3 s per call (measured).
-SERVERS = {
-    "calendar": "http://127.0.0.1:8101/mcp",
-    "gmail": "http://127.0.0.1:8102/mcp",
-    "finance": "http://127.0.0.1:8103/mcp",
-    "travel": "http://127.0.0.1:8104/mcp",
-}
+# LIFEOS_PORT_OFFSET: the tests run their own servers on other ports, so they never touch your running ones.
+_OFFSET = int(os.getenv("LIFEOS_PORT_OFFSET", "0"))
+SERVERS = {name: f"http://127.0.0.1:{port + _OFFSET}/mcp"
+           for name, port in (("calendar", 8101), ("gmail", 8102), ("finance", 8103), ("travel", 8104), ("price", 8105))}
 TIMEOUT_S = 10  # a cold live Gmail fetch takes ~3 s
 
 

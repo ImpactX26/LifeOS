@@ -7,6 +7,7 @@ Falls back to data/gmail_seeded.json (source=seeded). Run:  .venv\\Scripts\\pyth
 """
 import html
 import json
+import os
 import re
 import sys
 import time
@@ -29,7 +30,7 @@ CACHE_SECONDS = 60  # list_tasks + get_deadlines share one Gmail fetch (~3 s); a
 _cache = {"at": 0.0, "value": None}
 READ = ToolAnnotations(readOnlyHint=True)
 
-mcp = FastMCP("gmail", port=8102)
+mcp = FastMCP("gmail", port=8102 + int(os.getenv("LIFEOS_PORT_OFFSET", "0")))  # tests use their own ports
 
 
 def _deadline(text):

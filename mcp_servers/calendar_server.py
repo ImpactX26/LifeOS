@@ -5,6 +5,7 @@ no descriptions, attendees or locations. Falls back to data/calendar.json (sourc
 not signed in or unreachable. Run:  .venv\\Scripts\\python mcp_servers\\calendar_server.py
 """
 import json
+import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -18,7 +19,7 @@ IST = timezone(timedelta(hours=5, minutes=30))  # fixed offset: no DST, and no t
 SEEDED = Path(__file__).resolve().parents[1] / "data" / "calendar.json"
 READ = ToolAnnotations(readOnlyHint=True)
 
-mcp = FastMCP("calendar", port=8101)
+mcp = FastMCP("calendar", port=8101 + int(os.getenv("LIFEOS_PORT_OFFSET", "0")))  # tests use their own ports
 
 
 def _when(text, end=False):

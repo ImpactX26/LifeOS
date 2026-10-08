@@ -14,7 +14,12 @@ const pluggedOf = (d) => d.servers.filter((s) => s.plugged).map((s) => s.name)
 async function api(path, body) {
   const init = body === undefined ? undefined : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
   const res = await fetch(`/api${path}`, init)
-  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
+  if (!res.ok) {
+    const text = await res.text()
+    let detail = text
+    try { detail = JSON.parse(text).detail ?? text } catch { /* not JSON */ }
+    throw new Error(typeof detail === 'string' ? detail : `${res.status}: ${text}`)
+  }
   return res.json()
 }
 
@@ -35,6 +40,33 @@ export default function App() {
   const [reading, setReading] = useState(null)
   const [busy, setBusy] = useState(false)
   const [verdict, setVerdict] = useState(null)
+  const [meta, setMeta] = useState({}) // explanation, planner, model, trace from /ask
+  const [balance, setBalance] = useState(null) // {balance, as_of} from the uploaded statement's last row
+  const [statementNote, setStatementNote] = useState('')
+  const financeOn = live === true && plugged.includes('finance')
+
+  useEffect(() => {
+    if (financeOn) api('/balance').then(setBalance).catch(() => setBalance(null))
+  }, [financeOn])
+
+  // Uploading the file is the user's approval for Finance's write tool; the AI can never reach this.
+  // The backend masks it in memory: only date, category, amounts and balance reach Finance.
+  async function upload(e) {
+    const file = e.target.files[0]
+    e.target.value = '' // lets the same file be picked again
+    if (!file) return
+    try {
+      const r = await api('/statement', { csv: await file.text() })
+      const k = r.receipt
+      setBalance(r)
+      setStatementNote(`Read ${k.rows_kept} transactions (${k.from} to ${k.to}). Kept only ${k.kept_columns.join(', ')}; `
+        + `dropped ${k.dropped_columns.join(', ') || 'nothing'}${k.rejected.length ? `; ${k.rejected.length} bad rows skipped` : ''}.`)
+      setVerdict(null)
+      setLit([])
+    } catch (err) {
+      setStatementNote(`Couldn't use that file: ${err.message}`)
+    }
+  }
 
   // Sync with the backend's servers. Re-run whenever the API comes back, so start order doesn't matter.
   const refresh = () =>
@@ -68,6 +100,7 @@ export default function App() {
     }
     setReading(null)
     setVerdict(d.verdict)
+    setMeta(d)
     setBusy(false)
   }
 
@@ -84,7 +117,8 @@ export default function App() {
     setPlugged((p) => (action === 'unplug' ? p.filter((s) => s !== server) : [...p, server]))
   }
 
-  const status = { null: ['bg-white', '// connecting…'], true: ['bg-lime', '// live · mcp servers'], false: ['bg-orange', '// api offline · mock data'] }[live]
+  const planner = meta.model ? `planned by ${meta.model}` : meta.planner ? 'rules planner' : 'mcp servers'
+  const status = { null: ['bg-white', '// connecting…'], true: ['bg-lime', `// live · ${planner}`], false: ['bg-orange', '// api offline · mock data'] }[live]
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 md:py-10">
@@ -114,14 +148,33 @@ export default function App() {
         </button>
       </form>
 
-      <ServerStrip servers={servers} plugged={plugged} lit={lit} reading={reading} onToggle={toggle} disabled={busy} />
+      <div className="-mt-3 mb-6 flex flex-wrap items-center gap-2">
+        <label htmlFor="bal" className="text-xs font-bold uppercase">// your balance (₹)</label>
+        <input
+          id="bal"
+          readOnly
+          value={financeOn && balance ? Math.round(balance.balance).toLocaleString('en-IN') : ''}
+          placeholder={financeOn ? 'upload a statement' : 'plug in finance'}
+          title="The running balance on your statement's last row. Upload a newer statement to update it."
+          className="w-40 cursor-not-allowed border-2 border-ink bg-cream px-2 py-1 text-sm"
+        />
+        {financeOn && balance && <span className="text-xs">from your statement, as of {balance.as_of}</span>}
+        <label className={`cursor-pointer border-2 border-ink bg-lime px-3 py-1 text-xs font-bold uppercase shadow-hard-sm focus-within:shadow-hard ${financeOn && !busy ? '' : 'pointer-events-none opacity-50'}`}>
+          Upload statement (CSV)
+          <input type="file" accept=".csv,text/csv" onChange={upload} disabled={!financeOn || busy} className="sr-only" />
+        </label>
+        {statementNote && <span className="w-full text-xs">{statementNote}</span>}
+      </div>
+
+      <ServerStrip servers={servers} plugged={plugged} lit={lit} reading={reading} onToggle={toggle} disabled={busy}
+        offline={Object.keys(meta.offline || {})} />
 
       <main className="mt-6 grid gap-6 lg:grid-cols-5" aria-live="polite">
         <div className="lg:col-span-3">
-          <VerdictCard verdict={verdict} busy={busy} />
+          <VerdictCard verdict={verdict} busy={busy} explanation={meta.explanation} />
         </div>
         <div className="lg:col-span-2">
-          <Receipt verdict={verdict} />
+          <Receipt verdict={verdict} trace={meta.trace} />
         </div>
       </main>
     </div>

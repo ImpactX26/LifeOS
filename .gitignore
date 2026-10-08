@@ -28,3 +28,10 @@ Thumbs.db
 
 # --- raw bank statements: never commit, only the masked output ---
 data/raw/
+
+# --- the statement uploaded in a LifeOS session (masked, but still personal) ---
+data/session/
+
+# --- live search caches: per machine, rewritten on every live call ---
+data/flights_cache.json
+data/prices_cache.json
