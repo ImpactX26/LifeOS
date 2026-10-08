@@ -27,7 +27,23 @@ python backend/statement_import.py data/raw/manu_statement_raw.csv data/manu_sta
 pytest -q
 ```
 
-Run commands for the servers, backend and frontend get added here as each piece lands.
+**Frontend** (runs on mock data from `contracts/` until the backend's `POST /ask` exists):
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open http://localhost:5173 → **Ask** → plug in **Finance** → **Ask** again → the verdict flips.
+
+**MCP servers:** calendar :8101 · gmail :8102 · finance :8103, each at `http://localhost:<port>/mcp`:
+
+```bash
+.venv\Scripts\python run_servers.py
+```
+
+Calendar and Gmail use seeded data until someone signs in to the Manu demo account (see [docs/GOOGLE_SETUP.md](docs/GOOGLE_SETUP.md)). Run the tests with `pytest -q`.
 
 ## Team
 
