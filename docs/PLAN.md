@@ -92,7 +92,7 @@ For a pitch, this explains itself in one sentence: *"Keep a month of rent and SI
 
 **P5. MCP transport = streamable HTTP, one process per server** (ports 8101–8105). Avoid stdio-from-FastAPI on Windows: uvicorn's event loop can break asyncio subprocesses. Fallback: call the same FastMCP objects in-process.
 
-**SDK pin (verified):** `mcp==1.30.0`. **Do not upgrade to mcp 2.x**: it renamed `FastMCP` → `MCPServer`, so every tutorial and every AI-suggested snippet breaks. Use `from mcp.server.fastmcp import FastMCP`, `mcp.run(transport="streamable-http")` on the server side, and `from mcp.client.streamable_http import streamablehttp_client` with `ClientSession` on the client side.
+**SDK pin (verified):** `mcp==1.30.0`. **Do not upgrade to mcp 2.x**: it renamed `FastMCP` → `MCPServer`, so every tutorial and every AI-suggested snippet breaks. Use `from mcp.server.fastmcp import FastMCP`, `mcp.run(transport="streamable-http")` on the server side, and `from mcp.client.streamable_http import streamable_http_client` (the old `streamablehttp_client` name is deprecated) with `ClientSession` on the client side.
 
 **P6. Never pass MCP sessions straight to google-genai as tools.** Its automatic function calling would **bypass Guardian**. Use manual function calling only.
 

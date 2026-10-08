@@ -69,4 +69,4 @@ The servers read **one dedicated demo account for "Manu"**, never a teammate's r
 npx @modelcontextprotocol/inspector
 ```
 
-In the Inspector, pick transport **Streamable HTTP** and URL `http://localhost:8101/mcp`. Use `8102` for Gmail and `8103` for Finance. Then go to **Tools → List → Run**.
+In the Inspector, pick transport **Streamable HTTP** and URL `http://127.0.0.1:8101/mcp` (use `127.0.0.1`: on Windows `localhost` adds ~1.3 s per call). Use `8102` for Gmail and `8103` for Finance. Then go to **Tools → List → Run**.
