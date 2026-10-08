@@ -1,0 +1,11 @@
+{
+  "_note": "Editable user estimates (served by Finance get_cost_table). D sanity-checks against real Goa prices in H0-H1.",
+  "source": "user_estimate",
+  "as_of": "2026-10-08",
+  "currency": "INR",
+  "items": [
+    {"key": "goa_stay_per_night", "label": "Goa stay (per night)", "low": 1200, "high": 3500},
+    {"key": "goa_food_per_day", "label": "Food (per day)", "low": 800, "high": 1500},
+    {"key": "goa_local_transport_per_day", "label": "Scooter / local transport (per day)", "low": 400, "high": 700}
+  ]
+}

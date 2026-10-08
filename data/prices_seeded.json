@@ -1,0 +1,15 @@
+{
+  "_note": "SEEDED demo fallback for Price Check check_price(item). Never label as live.",
+  "source": "seeded",
+  "as_of": "2026-10-08T09:00:00+05:30",
+  "items": {
+    "laptop": [
+      {"title": "14in thin-and-light laptop, 16GB/512GB", "store": "Seeded Store A", "price": 85000},
+      {"title": "14in thin-and-light laptop, 16GB/512GB", "store": "Seeded Store B", "price": 81990}
+    ],
+    "table": [
+      {"title": "Engineered-wood study table", "store": "Seeded Store A", "price": 4499},
+      {"title": "Solid-wood study table", "store": "Seeded Store B", "price": 8999}
+    ]
+  }
+}
