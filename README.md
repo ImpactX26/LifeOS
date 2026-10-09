@@ -56,6 +56,6 @@ Calendar and Gmail use seeded data until someone signs in to the Manu demo accou
 | Role | Who | Owns |
 |---|---|---|
 | A | Sai Siddarth | Frontend and design |
-| B | Sai Gowrav | MCP servers, registry, FastAPI |
-| C | Samarth Anil | Gemini loop, engine, Guardian |
+| B | Sai Gowrav | MCP servers, registry |
+| C | Samarth Anil | AI Integrations: Gemini loop, engine, Guardian, injection |
 | D | Pramegha M | Data, API integration, tests, pitch |
