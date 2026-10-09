@@ -3,9 +3,11 @@
     .venv\\Scripts\\python backend\\main.py
 
 POST /ask {"question": "..."}          -> {"verdict", "explanation", "trace", "planner", "model", "offline"}
-GET  /servers                          -> which servers exist and which are plugged in
-POST /servers/{name}/plug | /unplug    -> the hot-plug
+GET  /servers                          -> every server: plugged in or not, reachable, and its discovered tools
+POST /servers/{name}/plug | /unplug    -> the hot-plug (the UI's On / Off)
 POST /statement {"csv": "..."}         -> upload a bank statement: masked here, in memory, then handed to Finance
+POST /statement {"sample": "name"}     -> the same with one of data/samples/*.csv (demo budgets)
+GET  /statement, GET /statement/samples -> balance + spending summary of the loaded statement; the sample names
 GET  /balance                          -> the balance from the uploaded statement (needs Finance plugged in)
 
 /ask: Gemini decides which tools to read (rules planner if no model answers); Guardian checks every call;
@@ -15,6 +17,7 @@ Gemini explains. The verdict numbers only ever come from the engine.
 import asyncio
 import json
 import os
+from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
@@ -31,6 +34,7 @@ import planner  # noqa: E402
 import statement_import  # noqa: E402
 from registry import SERVERS, Registry  # noqa: E402
 
+SAMPLES = Path(__file__).resolve().parents[1] / "data" / "samples"
 TODAY = date.fromisoformat(os.getenv("LIFEOS_TODAY") or date.today().isoformat())  # frozen demo clock (PLAN P2)
 GEMINI = agent.make_generate()  # None without GEMINI_API_KEY -> rules planner only
 
@@ -43,7 +47,8 @@ class Question(BaseModel):
 
 
 class Statement(BaseModel):
-    csv: str = Field(min_length=10, max_length=2_000_000)
+    csv: str | None = Field(None, min_length=10, max_length=2_000_000)
+    sample: str | None = Field(None, pattern=r"^[a-z0-9_]{1,60}$")  # a file name in data/samples, nothing else
 
 
 async def _finance(tool, args=None):
@@ -61,20 +66,59 @@ async def get_balance():
     return await _finance("get_balance")
 
 
+async def _summary():
+    """What the UI shows about the loaded statement: monthly spend by category, commitments and the forecast."""
+    s = await _finance("get_spending_summary", {"days": 30})
+    keep = ("monthly_avg_spend", "monthly_avg_by_category", "monthly_commitments", "recurring", "forecast", "as_of")
+    return {k: s.get(k) for k in keep}
+
+
+@app.get("/statement")
+async def get_statement():
+    """The loaded statement's balance and summary; null while Finance is off or no statement is loaded yet."""
+    if "finance" not in registry.plugged:
+        return None
+    r = await registry.call("finance__get_balance")
+    return {**r["result"], "summary": await _summary()} if r["ok"] else None
+
+
+@app.get("/statement/samples")
+def statement_samples():
+    return {"samples": sorted(p.stem for p in SAMPLES.glob("*.csv"))}
+
+
 @app.post("/statement")
 async def upload_statement(body: Statement):
     """You uploading the file IS the approval Guardian requires for Finance's load_statement write tool.
     The raw file is masked in memory and never stored; Finance only ever receives date/category/debit/credit/balance."""
+    if body.sample:
+        path = SAMPLES / f"{body.sample}.csv"
+        if not path.is_file():
+            raise HTTPException(404, f"no sample statement '{body.sample}'")
+        text = path.read_text(encoding="utf-8")
+    elif body.csv:
+        text = body.csv
+    else:
+        raise HTTPException(422, "send a csv or the name of a sample")
     try:
-        masked, receipt = statement_import.mask_text(body.csv)
+        masked, receipt = statement_import.mask_text(text)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
-    return {"receipt": receipt, **await _finance("load_statement", {"statement": masked})}
+    loaded = await _finance("load_statement", {"statement": masked})
+    return {"receipt": receipt, **loaded, "summary": await _summary()}
 
 
 @app.get("/servers")
-def servers():
-    return {"servers": [{"name": n, "plugged": n in registry.plugged} for n in SERVERS]}
+async def servers():
+    """Every server LifeOS knows: plugged in (On) or not, reachable, and the tools it announced over tools/list."""
+    catalogue = await registry.discover()
+    tools = defaultdict(list)
+    for t in catalogue["tools"]:
+        tools[t["server"]].append({"name": t["tool"], "description": t["description"], "read_only": t["read_only"]})
+    status = lambda n: "error" if n in catalogue["offline"] else "connected" if n in registry.plugged else "off"  # noqa: E731
+    return {"servers": [{"name": n, "plugged": n in registry.plugged, "status": status(n), "tools": tools[n],
+                         **({"error": catalogue["offline"][n]} if n in catalogue["offline"] else {})} for n in SERVERS],
+            "today": TODAY.isoformat()}
 
 
 def _known(name):
@@ -83,17 +127,17 @@ def _known(name):
 
 
 @app.post("/servers/{name}/plug")
-def plug(name: str):
+async def plug(name: str):
     _known(name)
     registry.plug(name)
-    return servers()
+    return await servers()
 
 
 @app.post("/servers/{name}/unplug")
-def unplug(name: str):
+async def unplug(name: str):
     _known(name)
     registry.unplug(name)
-    return servers()
+    return await servers()
 
 
 def _key(name, args):

@@ -41,7 +41,7 @@ NOT_PLACES = {"out", "home", "work", "office", "sleep", "bed", "there", "it", "c
               "doctor", "hospital", "park", "beach", "temple", "class", "party", "dinner", "lunch", "movies", "concert"}
 MONEY = {"get_balance", "get_spending_summary", "get_sips", "get_cost_table", "list_tasks"}
 NEEDS = {  # which tools each kind of question reads (the rules planner's knowledge; Gemini chooses for itself)
-    "trip": MONEY | {"list_events", "find_free_slots", "get_deadlines", "search_flights"},
+    "trip": MONEY | {"list_events", "find_free_slots", "get_deadlines", "search_flights", "search_hotels"},
     "purchase": MONEY | {"check_price"},
     "savings_goal": MONEY | {"check_price"},
     "expense": MONEY | {"list_events"},
@@ -125,9 +125,16 @@ def parse(question, today):
     raw = {"people": 1 + (friends or 0), "months": num(r"(\d+)\s*months?")}
     if m := re.search(r"(?:₹|rs\.?|inr)\s*([\d,]+)\s*(k)?", q):
         raw["price"] = int(m.group(1).replace(",", "")) * (1000 if m.group(2) else 1)
-    item = re.search(r"\b(?:buy|afford|purchase|get|for)\s+(?:a |an |the |this |new |my |some )*([a-z0-9][a-z0-9 +]*?)"
-                     r"(?=\s+(?:this|next|within|in|by|for|before|on|at|with|under|from)\b|[?.!]|$)", q)
-    raw["item"] = item.group(1).strip() if item else None
+    # "buy an HP Omen 16-am0076TX", "get a Sony WH-1000XM5", "is an iPhone 17 within my budget", "price of a PS5"
+    item = re.search(r"(?:\b(?:buy|afford|purchase|get|for|order|want|need|spend on|price of|cost of|upgrade to)\s+"
+                     r"(?:to (?:buy|get|order|purchase) )?|^(?:is|are) )(?:a |an |the |this |new |my |some )*"
+                     r"(?!to\b)([a-z0-9][a-z0-9 +.\-]*?)(?=\s+(?:this|next|within|in|by|for|before|on|at|with|under|from|"
+                     r"worth|affordable|right now|now)\b|[?!,]|\.?$)", q)
+    raw["item"] = item.group(1).strip(" .-") if item else None
+    bought = re.search(r"\b(buy|afford|purchase|get|order|want|need|spend on|price of|cost of|upgrade to|budget)\b", q)
+    if not raw["item"] and len(q.split()) <= 5 and not re.search(  # a bare product name: "hp omen laptop"
+            r"^(should|can|could|how|what|why|when|where|who|which|is|are|do|does|will|would|i|my)\b", q):
+        raw["item"], bought = q.strip(" ?.!") or None, True
     if "save" in q:
         raw["kind"] = "savings_goal"
     elif city:
@@ -140,7 +147,7 @@ def parse(question, today):
         raw["start"] = str(_when(q, today, weekend=True) or today)
     elif place:  # somewhere the table doesn't know: still a trip, priced only if flights turn up
         raw |= {"kind": "trip", "city": place.title()} | _trip_dates(q, today)
-    elif re.search(r"\b(buy|afford|purchase)\b", q) and raw["item"]:
+    elif bought and raw["item"]:
         raw["kind"] = "purchase"
         if when := _when(q, today):
             raw["start"] = str(when)
@@ -224,7 +231,12 @@ def _context(intent, today):
     if intent["kind"] == "trip":
         end += timedelta(days=1)
     start = intent["start"] if intent["kind"] == "expense" else today
-    return {"start": start.isoformat(), "end": end.isoformat(), "min_minutes": 60, "days": 30, "item": intent["item"]}
+    trip = intent["kind"] == "trip"
+    return {"start": start.isoformat(), "end": end.isoformat(), "min_minutes": 60, "days": 30, "item": intent["item"],
+            # hotels: the trip's nights, in the city asked about (None outside trips, so the tool isn't planned)
+            "city": intent["city"] if trip and intent["dest"] else None,
+            "check_in": intent["start"].isoformat() if trip else None,
+            "check_out": intent["end"].isoformat() if trip else None}
 
 
 def plan(intent, tools, today):

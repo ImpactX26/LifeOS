@@ -79,3 +79,25 @@ def test_statement_upload_masks_then_loads(client):
 def test_bad_input(client):
     assert client.post("/servers/nope/plug").status_code == 404
     assert client.post("/ask", json={"question": ""}).status_code == 422
+
+
+def test_servers_announce_their_tools(client):
+    s = {x["name"]: x for x in client.get("/servers").json()["servers"]}
+    assert (s["finance"]["status"], s["finance"]["tools"]) == ("off", [])
+    assert client.get("/statement").json() is None  # Finance off: nothing to show, and not an error
+    assert {t["name"] for t in s["travel"]["tools"]} == {"search_flights", "search_hotels"}
+    plugged = {x["name"]: x for x in client.post("/servers/finance/plug").json()["servers"]}["finance"]
+    assert plugged["status"] == "connected"
+    assert [t["name"] for t in plugged["tools"] if not t["read_only"]] == ["load_statement"]
+
+
+def test_sample_statements_load_by_name(client):
+    client.post("/servers/finance/plug")
+    assert "manu_statement_spend_30k" in client.get("/statement/samples").json()["samples"]
+    assert client.post("/statement", json={"sample": "../.env"}).status_code == 422  # names only, no paths
+    try:
+        r = client.post("/statement", json={"sample": "manu_statement_spend_30k"}).json()
+        assert (r["balance"], round(r["summary"]["monthly_avg_spend"])) == (94861, 29999)
+        assert client.get("/statement").json()["balance"] == 94861
+    finally:
+        client.post("/statement", json={"sample": "manu_statement"})  # the other API tests expect Manu's statement

@@ -35,3 +35,4 @@ data/session/
 # --- live search caches: per machine, rewritten on every live call ---
 data/flights_cache.json
 data/prices_cache.json
+data/hotels_cache.json

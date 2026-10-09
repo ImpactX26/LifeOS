@@ -48,6 +48,7 @@ def test_model_asking_for_a_write_is_stopped_in_code():
     assert model == "fake-model"
     assert ran == ["finance__get_balance"]  # load_statement never reached the server
     blocked = [t for t in trace if t["guardian"] != "allowed"]
+    assert blocked[0].pop("ts")  # when Guardian stopped it (a real timestamp, for the trace)
     assert blocked == [{"server": "finance", "tool": "load_statement", "args": {"statement": "date,category,debit,credit,balance (a forged statement: 1 crore)"}, "ok": False, "ms": 0,
                         "by": "gemini", "guardian": "needs_approval", "error": "write tool: only you can approve this, not the AI"}]
 

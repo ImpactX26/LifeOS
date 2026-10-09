@@ -16,7 +16,7 @@ import travel_server  # noqa: E402
 
 LOCKED = {
     "price": {"check_price"},
-    "travel": {"search_flights"},
+    "travel": {"search_flights", "search_hotels"},
     "calendar": {"list_events", "find_free_slots"},
     "gmail": {"list_tasks", "get_deadlines"},
     "finance": {"load_statement", "get_balance", "get_sips", "get_spending_summary", "get_cost_table"},
@@ -218,3 +218,48 @@ def test_price_cleaning_keeps_only_the_real_thing():
                                   listing("Marvel's Spider-Man 2 PS5", "Amazon.in", 3999),  # a game, not the console
                                   listing("Sony PS5 Slim Console", "Croma", 54990)], "ps5")
     assert [x["price"] for x in ps5] == [54990, 64990]  # "ps5" also matches "PlayStation 5"
+    # A live "hp omen laptop" search: most titles never say "laptop"; the brand and model are enough
+    omen, _ = price_server._clean([listing("HP OMEN Transcend 16-u0022TX 13th Gen Intel Core i7 RTX 4050", "Flipkart", 138029),
+                                   listing("HP Omen 16-am0076TX Gaming Laptop", "Croma", 189999),
+                                   listing("HP OMEN Gaming Mouse", "Amazon.in", 2999),
+                                   listing("HP Victus 15 Gaming Laptop", "Amazon.in", 69990)], "hp omen laptop")
+    assert [x["price"] for x in omen] == [138029, 189999]
+    assert price_server._clean([listing("HP OMEN Transcend 16", "Flipkart", 138029)], "laptop")[0] == []
+
+
+def test_hotels_are_real_rooms(monkeypatch, tmp_path):
+    data = {"properties": [  # the shape of a live Google Hotels answer
+        {"type": "hotel", "name": "Zostel Goa (Morjim)", "rate_per_night": {"extracted_lowest": 978}},  # one dorm bed
+        {"type": "vacation rental", "name": "Two-Bedroom Apartment", "rate_per_night": {"extracted_lowest": 1189}},
+        {"type": "hotel", "name": "Sibaya Beach Resort", "rate_per_night": {"extracted_lowest": 3727}, "overall_rating": 4.1},
+        {"type": "hotel", "name": "The Byke Retreat", "rate_per_night": {"extracted_lowest": 1490}, "overall_rating": 4.5},
+    ]}
+    assert [h["name"] for h in travel_server._hotels(data)] == ["The Byke Retreat", "Sibaya Beach Resort"]
+    monkeypatch.setenv("LIFEOS_OFFLINE", "1")
+    monkeypatch.setattr(travel_server, "HOTELS_CACHE", tmp_path / "hotels_cache.json")
+    r = asyncio.run(travel_server.search_hotels("Goa", "2026-10-10", "2026-10-11"))
+    assert (r["source"], r["nights"], len(r["results"]), r["results"][0]["per_night"]) == ("seeded", 1, 10, 409)
+    with pytest.raises(ValueError):
+        asyncio.run(travel_server.search_hotels("Goa", "2026-10-11", "2026-10-10"))
+
+
+def test_price_falls_back_from_a_sku_to_its_model(tmp_path, monkeypatch):
+    # A live "hp omen 16-am0076tx" search (Oct 2026): no store lists that SKU, and Amazon's titles drop "HP"
+    def listing(title, store, price):
+        return {"title": title, "store": store, "price": price, "trusted": store in ("Amazon.in", "Flipkart", "Reliance Digital")}
+
+    listings = [listing("HP OMEN 16-wf0056TX Intel Core i7 13th Gen", "Flipkart", 145299),
+                listing("HP OMEN 16 AMD Ryzen AI 7 Gaming Laptop", "Reliance Digital", 166995),
+                listing("Omen 16, Intel Core Ultra 7 255H, 8GB RTX 5050, 24GB DDR5", "Amazon.in", 168616),  # no "HP"
+                listing("Victus, 13th Gen Intel core i7-13650HX, 6GB RTX 4050", "Amazon.in", 142990),  # not an Omen
+                listing("HP OMEN 16L Gaming Desktop PC 35L GT17-0000in", "Flipkart", 409638)]  # a desktop
+    assert price_server._family("HP Omen 16-am0076TX") == "hp omen 16"
+    assert price_server._family("iPhone 16") is None
+
+    async def live(item):
+        return listings, None
+    monkeypatch.setattr(price_server, "_live", live)
+    monkeypatch.setattr(price_server, "CACHE", tmp_path / "prices_cache.json")
+    out = asyncio.run(price_server.check_price("HP Omen 16-am0076TX"))
+    assert [x["price"] for x in out["results"]] == [145299, 166995, 168616]
+    assert "hp omen 16" in out["note"]

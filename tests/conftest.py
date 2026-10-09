@@ -35,7 +35,8 @@ def statement(tmp_path_factory):
 def mcp_servers(statement):
     """Real MCP servers over HTTP, forced to seeded data and the sample statement."""
     assert not any(_open(p) for p in PORTS), f"ports {PORTS} are busy: the tests need their own MCP servers"
-    env = {**os.environ, "LIFEOS_OFFLINE": "1", "LIFEOS_STATEMENT": str(statement)}
+    env = {**os.environ, "LIFEOS_OFFLINE": "1", "LIFEOS_STATEMENT": str(statement),
+           "LIFEOS_CACHE_DIR": str(statement.parent)}  # an empty search cache: seeded fares and prices only
     procs = [subprocess.Popen([sys.executable, str(p)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
              for p in sorted((ROOT / "mcp_servers").glob("*_server.py"))]
     deadline = time.time() + 20

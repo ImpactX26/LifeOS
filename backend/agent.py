@@ -10,6 +10,7 @@ the caller falls back to the rules planner.
 import asyncio
 import json
 import os
+from datetime import datetime, timedelta, timezone
 
 from google import genai
 from google.genai import types
@@ -112,9 +113,13 @@ def clean(args):
     return {k: int(v) if isinstance(v, float) and v.is_integer() else v for k, v in (args or {}).items()}
 
 
+def _now():
+    return datetime.now(timezone(timedelta(hours=5, minutes=30))).isoformat(timespec="milliseconds")
+
+
 def entry(result, by, decision="allowed"):
     """One trace row: what ran, who asked for it, and Guardian's decision."""
-    row = {k: result[k] for k in ("server", "tool", "args", "ok", "ms")} | {"by": by, "guardian": decision}
+    row = {k: result[k] for k in ("server", "tool", "args", "ok", "ms")} | {"by": by, "guardian": decision, "ts": result.get("ts") or _now()}
     return row | ({} if result["ok"] else {"error": result["error"]})
 
 
@@ -155,7 +160,7 @@ async def gather(question, facts, catalogue, call_tool, check, generate, chain, 
             else:
                 server, _, tool = c.name.partition("__")
                 trace.append({"server": server, "tool": tool, "args": clean(c.args), "ok": False, "ms": 0,
-                              "by": "gemini", "guardian": decision, "error": why})
+                              "by": "gemini", "guardian": decision, "error": why, "ts": _now()})
                 payload = {"error": f"Blocked by LifeOS Guardian: {why}"}
             parts.append(types.Part(function_response=types.FunctionResponse(id=c.id, name=c.name, response=payload)))
         contents.append(types.Content(role="user", parts=parts))

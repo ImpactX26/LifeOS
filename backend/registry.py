@@ -13,6 +13,7 @@ import json
 import os
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
@@ -24,6 +25,7 @@ _OFFSET = int(os.getenv("LIFEOS_PORT_OFFSET", "0"))
 SERVERS = {name: f"http://127.0.0.1:{port + _OFFSET}/mcp"
            for name, port in (("calendar", 8101), ("gmail", 8102), ("finance", 8103), ("travel", 8104), ("price", 8105))}
 TIMEOUT_S = 10  # a cold live Gmail fetch takes ~3 s
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 @asynccontextmanager
@@ -80,7 +82,7 @@ class Registry:
     async def call(self, qualified_name, args=None):
         """Route "<server>__<tool>" to its server. Never raises: failures come back with ok=False."""
         server, _, tool = qualified_name.partition("__")
-        out = {"server": server, "tool": tool, "args": args or {}}
+        out = {"server": server, "tool": tool, "args": args or {}, "ts": datetime.now(IST).isoformat(timespec="milliseconds")}
         if server not in self.plugged:
             return {**out, "ok": False, "error": f"server '{server}' is not plugged in", "ms": 0}
         start = time.perf_counter()

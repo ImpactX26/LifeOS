@@ -78,6 +78,11 @@ def _range(pair):
     return {"low": round(pair[0]), "high": round(pair[1])} if pair else {"low": None, "high": None}
 
 
+def _part(key, pair, **detail):
+    """One card's share of the cost ({key, low, high, ...}); low/high are None when that part couldn't be priced."""
+    return {"key": key, **_range(pair), **detail}
+
+
 def _window(start, end, hours=TRIP_HOURS):
     return datetime.combine(start, hours[0], IST), datetime.combine(end, hours[1], IST)
 
@@ -188,6 +193,7 @@ def decide(question, intent, results, known_servers):
                 "pay_day": extra.get("pay_day"),
                 "next_salary": extra.get("next_salary"),
                 "math": extra.get("math"),  # [{label, amount}], last row = the lowest point (worst case), sums exactly
+                "breakdown": extra.get("breakdown"),  # the cost per card: flight/stay/other, product offers, or outing
             },
             "evidence": evidence,
             "tradeoffs": tradeoffs,
@@ -242,29 +248,47 @@ def decide(question, intent, results, known_servers):
         if len(usable) < len(fares):
             span += f"; pricing on the {len(usable)} within 1.5x of the cheapest"
         note(r, f"{res['origin']}-{res['dest']} {_day(date.fromisoformat(res['date']))}: {span}")
-    o = b = flights = None
+    o = b = flights = flight_source = None
+    nights = (intent["end"] - intent["start"]).days if kind == "trip" else 0
     if kind == "trip":
         o, b = legs.get((intent["origin"], intent["start"].isoformat())), legs.get((intent["dest"], intent["end"].isoformat()))
         flights = (o[0]["price"] + b[0]["price"], o[-1]["price"] + b[-1]["price"]) if o and b else None
+        flight_source = next((r["result"]["source"] for r in by_tool.get("search_flights", [])), None)
 
-    # --- the user's cost table: trip extras and per-person outing costs ---
-    extras = per_person = None
+    # --- hotels: real room rates for the stay (Travel already left out hostels and vacation rentals) ---
+    hotel = None
+    for r in by_tool.get("search_hotels", []):
+        res = r["result"]
+        rated = sorted([h for h in res["results"] if (h.get("rating") or 0) >= 3.8] or res["results"], key=lambda h: h["per_night"])
+        if len(rated) >= 3:
+            nightly = [h["per_night"] for h in rated]
+            per_night = (nightly[len(nightly) // 4], round(statistics.median(nightly)))  # the budget end to the typical room
+            pick = next(h for h in rated if h["per_night"] >= per_night[0])
+            hotel = {"per_night": per_night, "example": pick, "source": res["source"]}
+            stars = f", rated {pick['rating']}" if pick.get("rating") else ""
+            note(r, f"{len(rated)} hotels in {res['city']} for {_day(date.fromisoformat(res['check_in']))} - "
+                    f"{_day(date.fromisoformat(res['check_out']))}: typical {_rs(per_night[0])} - {_rs(per_night[1])} a night "
+                    f"(2-4 star, hostels left out); e.g. {pick['name']} {_rs(pick['per_night'])}{stars}")
+        else:
+            note(r, f"Only {len(res['results'])} hotel prices for {res['city']}, so the stay uses your cost estimate")
+
+    # --- the user's cost table: the stay (when there are no hotel prices), food, local transport, outings ---
+    stay = other = per_person = None
     if r := first("get_cost_table"):
         items = {i["key"]: i for i in r["result"].get("items", [])}
         if kind == "trip":
-            nights = (intent["end"] - intent["start"]).days
             kinds = ("stay_per_night", "food_per_day", "local_transport_per_day")
             city = intent["city"].lower()
             fallback = "abroad" if intent.get("abroad") else "default"
-            parts = [items.get(f"{city}_{k}") or items.get(f"{fallback}_{k}") for k in kinds]
-            if all(parts):
-                stay, food, local = parts
-                extras = tuple(stay[k] * nights + (food[k] + local[k]) * (nights + 1) for k in ("low", "high"))
-                generic = "" if all(f"{city}_{k}" in items for k in kinds) else f" (default estimates: no {intent['city']}-specific numbers yet)"
-                note(r, f"Stay + food + local transport for {nights} night{'s' if nights != 1 else ''} / {nights + 1} days: "
-                        f"{_rs(extras[0])} - {_rs(extras[1])}{generic}")
-            else:
-                note(r, f"No cost estimates for {intent['city']} yet")
+            row, days = (lambda k: items.get(f"{city}_{k}") or items.get(f"{fallback}_{k}")), nights + 1
+            generic = "" if all(f"{city}_{k}" in items for k in kinds) else f" (default estimates: no {intent['city']}-specific numbers yet)"
+            if not hotel and (s := row("stay_per_night")):
+                stay = (s["low"] * nights, s["high"] * nights)
+            if (food := row("food_per_day")) and (local := row("local_transport_per_day")):
+                other = tuple((food[k] + local[k]) * days for k in ("low", "high"))
+            told = "; ".join(([f"stay for {nights} night{'s' if nights != 1 else ''} {_rs(stay[0])} - {_rs(stay[1])}"] if stay else [])
+                             + ([f"food + local transport for {days} days {_rs(other[0])} - {_rs(other[1])}"] if other else []))
+            note(r, told[0].upper() + told[1:] + generic if told else f"No cost estimates for {intent['city']} yet")
         elif kind == "expense" and (row := items.get(f"{intent['expense_type']}_per_person")):
             per_person = (row["low"], row["high"])
             note(r, f"{row.get('label', intent['expense_type'])}: {_rs(row['low'])} - {_rs(row['high'])} per person, x{intent['people']}")
@@ -274,17 +298,22 @@ def decide(question, intent, results, known_servers):
     # --- shop prices ---
     # Price Check has already removed refurbished, accessories, other models and scams; prices come only from
     # mainstream stores, and only when at least two of them agree (one odd listing is not a market price).
-    price = best = None
+    if hotel:
+        stay = tuple(p * nights for p in hotel["per_night"])
+    price = best = price_source = price_note = None
+    offers = []
     for r in by_tool.get("check_price", []):
         res = r["result"]
         trusted = [x for x in res["results"] if x.get("price") and x.get("trusted", True)]
+        price_note = res.get("note")
+        price_source, offers = res["source"], sorted(trusted, key=lambda x: x["price"])[:3] if len(trusted) >= 2 else []
         cleaned = ", ".join(f"{n} {k.replace('_', ' ')}" for k, n in (res.get("dropped") or {}).items())
         cleaned = f" (filtered out: {cleaned})" if cleaned else ""
         if len(trusted) >= 2:
             prices = [x["price"] for x in trusted]
             price, best = _price_range(prices), min(trusted, key=lambda x: x["price"])
             note(r, f"{len(prices)} new listings for '{res['item']}' at mainstream stores: {_rs(min(prices))} - {_rs(max(prices))}; "
-                    f"typical {_rs(price[0])} - {_rs(price[1])}{cleaned}")
+                    f"typical {_rs(price[0])} - {_rs(price[1])}{cleaned}" + (f". {res['note']}" if res.get("note") else ""))
         else:
             note(r, f"No reliable price for '{res['item']}': {len(trusted)} listing at mainstream stores{cleaned}")
 
@@ -313,14 +342,28 @@ def decide(question, intent, results, known_servers):
 
     if kind == "trip":
         # no fares = no price: a trip priced on hotel + food alone would look far cheaper than it is
-        cost, thing = (tuple(map(sum, zip(flights, extras or (0, 0)))) if flights else None), intent["city"]
+        cost, thing = (tuple(map(sum, zip(flights, stay or (0, 0), other or (0, 0)))) if flights else None), intent["city"]
         if intent.get("abroad"):
             deadline_tradeoffs.insert(0, "Going abroad: check your passport and visa first. Many countries need a visa, "
                                          "and it can take days to weeks")
+        legs_shown = [{"from": intent["origin"], "to": intent["dest"], "date": str(intent["start"]), **o[0]},
+                      {"from": intent["dest"], "to": intent["origin"], "date": str(intent["end"]), **b[0]}] if flights else []
+        extra["breakdown"] = [  # one entry per card in the UI; together they add up to the trip cost
+            _part("flight", flights, source=flight_source, legs=legs_shown),
+            _part("stay", stay, nights=nights, source=hotel["source"] if hotel else "estimate" if stay else None,
+                  per_night=list(hotel["per_night"]) if hotel else None, hotel=hotel["example"] if hotel else None),
+            _part("other", other, days=nights + 1, source="estimate" if other else None),
+        ]
     elif kind == "expense":
         cost, thing = (per_person[0] * intent["people"], per_person[1] * intent["people"]) if per_person else None, intent["item"]
+        extra["breakdown"] = [_part("outing", cost, per_person=list(per_person) if per_person else None,
+                                    people=intent["people"], source="estimate" if per_person else None)]
     else:
         cost, thing = (intent["price"], intent["price"]) if intent["price"] else price, intent["item"]
+        extra["breakdown"] = [_part("product", cost, source="user" if intent["price"] else price_source,
+                                    note=None if intent["price"] or not offers else price_note,
+                                    offers=[{k: x.get(k) for k in ("title", "store", "price", "mrp", "rating", "reviews", "link")}
+                                            for x in ([] if intent["price"] else offers)])]
 
     if not (bal and summary):
         tradeoffs += deadline_tradeoffs

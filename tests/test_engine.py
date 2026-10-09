@@ -31,6 +31,7 @@ def offline(monkeypatch, tmp_path, statement):
     monkeypatch.setattr(gmail_server, "creds", lambda: None)
     monkeypatch.setenv("LIFEOS_OFFLINE", "1")
     monkeypatch.setattr(travel_server, "CACHE", tmp_path / "no_cache.json")
+    monkeypatch.setattr(travel_server, "HOTELS_CACHE", tmp_path / "no_hotels_cache.json")
     monkeypatch.setattr(price_server, "CACHE", tmp_path / "no_price_cache.json")
     # Manu's sample statement (conftest.py), masked as an upload would be: balance Rs 54,263 on Thu 08 Oct.
     monkeypatch.setattr(finance_server, "STATEMENT", statement)
@@ -137,8 +138,9 @@ def test_planner_dates_directions_and_no_writes():
 def test_before_finance_looks_fine():
     v, _ = ask(Q, [calendar_server, gmail_server, travel_server])
     assert v["verdict"] == "yes" and v["not_read"] == ["finance", "price"]  # a trip doesn't need shop prices
-    # Rs 6,120 / Rs 6,880 fares are >1.5x the cheapest, so they're listed but not priced in
-    assert v["numbers"]["trip_cost"] == {"low": 8109, "high": 9990} and v["numbers"]["balance"] is None
+    # Rs 6,120 / Rs 6,880 fares are >1.5x the cheapest, so they're listed but not priced in; plus one hotel night
+    # (seeded Google Hotels capture: Rs 1,490 at the budget end to Rs 3,842 typical)
+    assert v["numbers"]["trip_cost"] == {"low": 8109 + 1490, "high": 9990 + 3842} and v["numbers"]["balance"] is None
     findings = " | ".join(e["finding"] for e in v["evidence"])
     assert "1 email contains instructions aimed at the AI" in findings
     assert not any("Goa weekend pre-approval" in t for t in v["tradeoffs"])  # injected email never shapes the plan
@@ -186,7 +188,7 @@ def test_risky_comes_with_a_gentle_plan(tmp_path, monkeypatch):
     set_balance(monkeypatch, 30000)
     v, _ = ask(Q, [calendar_server, gmail_server, travel_server, finance_server])
     assert v["verdict"] == "risky"
-    assert v["headline"] == ("Possible, but risky: you can pay for it, but before payday you'd dip about Rs 8,148 "
+    assert v["headline"] == ("Possible, but risky: you can pay for it, but before payday you'd dip about Rs 8,490 "
                              "below your Rs 10,000 safety cushion.")
     assert any(t.startswith("Still going out before payday: SIP Rs 3,000 (Sat 10 Oct)") for t in v["tradeoffs"])
     assert v["numbers"]["remaining"]["low"] < v["numbers"]["safety_floor"]  # shown in red: below the cushion
@@ -260,3 +262,34 @@ def test_one_listing_is_not_a_market_price(tmp_path, monkeypatch):
     monkeypatch.setattr(price_server, "SEEDED", seeded)
     v, _ = ask("Can I buy airpods pro 2 this month", ALL)
     assert v["verdict"] == "insufficient_data" and "reliable price" in v["headline"]
+
+
+def test_every_card_has_its_share_and_they_add_up():
+    v, _ = ask(Q, [calendar_server, gmail_server, travel_server, finance_server])
+    parts, cost = v["numbers"]["breakdown"], v["numbers"]["trip_cost"]
+    assert [p["key"] for p in parts] == ["flight", "stay", "other"]
+    assert (sum(p["low"] for p in parts), sum(p["high"] for p in parts)) == (cost["low"], cost["high"])
+    flight, stay, other = parts
+    assert (flight["low"], flight["legs"][0]["from"], flight["legs"][1]["date"]) == (8109, "BLR", "2026-10-11")
+    # the stay is real hotel prices (seeded capture), the rest the user's cost table
+    assert (stay["per_night"], stay["hotel"]["name"], stay["source"]) == ([1490, 3842], "The Byke Retreat - Royal Pearl", "seeded")
+    assert (other["low"], other["high"], other["source"]) == (2400, 4400, "estimate")  # Goa food + scooter, 2 days
+    laptop, _ = ask("Can I buy a laptop this month", ALL)
+    product = laptop["numbers"]["breakdown"][0]
+    assert product["key"] == "product" and [o["price"] for o in product["offers"]] == [81990, 85000]
+    dinner, _ = ask("Can I go to a fancy dinner to taj with 3 other friends this saturday", ALL)
+    assert dinner["numbers"]["breakdown"] == [{"key": "outing", "low": 10000, "high": 24000, "per_person": [2500, 6000],
+                                               "people": 4, "source": "estimate"}]
+
+
+@pytest.mark.parametrize("question, kind, item", [
+    ("Can I get an HP Omen laptop?", "purchase", "hp omen laptop"),
+    ("Can I afford the HP Omen 16-am0076TX?", "purchase", "hp omen 16-am0076tx"),  # model numbers keep their dashes
+    ("hp omen laptop", "purchase", "hp omen laptop"),  # a bare product name
+    ("Is an HP Omen laptop within my budget?", "purchase", "hp omen laptop"),
+    ("What is the price of a PS5?", "purchase", "ps5"),
+    ("I want to learn guitar", "other", None),  # wanting to do something isn't buying it
+])
+def test_rules_planner_names_the_exact_item(question, kind, item):
+    intent = planner.parse(question, date(2026, 10, 8))
+    assert (intent["kind"], intent["item"]) == (kind, item)
