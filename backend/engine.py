@@ -431,7 +431,8 @@ def decide(question, intent, results, known_servers):
         money = [f"{CUTTABLE[c][0].upper()}{CUTTABLE[c][1:]} {until}: saves ~{_rs(v)} (forecast for the {window_days} days left)" for c, v in cuts]
     else:
         skip = tuple(fun)
-        verdict = "risky" if cash(pay_day, skip) - cost[0] >= 0 and lowest(cost[0], skip) >= 0 else "no"
+        # risky = under the cushion but never negative, even at the highest price; any chance of going negative is a no
+        verdict = "risky" if cash(pay_day, skip) - cost[1] >= 0 and lowest(cost[1], skip) >= 0 else "no"
         # earliest date it fits: right after one of the next few salaries, cutting back on fun spending until then
         fits, salary = None, salary_day
         for _ in range(6):

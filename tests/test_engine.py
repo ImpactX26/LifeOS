@@ -164,14 +164,15 @@ def test_other_cities_use_default_cost_estimates():
     assert finding.endswith("(default estimates: no Chennai-specific numbers yet)")
 
 
-@pytest.mark.parametrize("balance, verdict", [(200000, "yes"), (30000, "risky"), (0, "no")])
+# 25,000: the cheapest version stays above zero but the dearest goes negative, so it is a no, not risky
+@pytest.mark.parametrize("balance, verdict", [(200000, "yes"), (30000, "risky"), (25000, "no"), (0, "no")])
 def test_balance_extremes(tmp_path, monkeypatch, balance, verdict):
     set_balance(monkeypatch, balance)
     v, _ = ask(Q, [calendar_server, gmail_server, travel_server, finance_server])
     assert v["verdict"] == verdict
 
 
-def test_not_yet_only_when_even_the_cheapest_version_goes_below_zero(tmp_path, monkeypatch):
+def test_not_yet_when_even_the_cheapest_version_goes_below_zero(tmp_path, monkeypatch):
     set_balance(monkeypatch, 0)
     costs = tmp_path / "cost_table.json"
     costs.write_text(json.dumps({"source": "user_estimate", "as_of": "2026-10-08", "items": [
