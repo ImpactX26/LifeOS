@@ -125,7 +125,7 @@ React (Vite+Tailwind)  ──HTTP──▶  FastAPI  backend/main.py
 | Role | Who | Track |
 |---|---|---|
 | **A** | **Sai Siddarth** | Frontend and design (has the React experience) |
-| **B** | **Sai Gowrav** | Backend: MCP servers (calendar, gmail), registry, FastAPI |
+| **B** | **Sai Gowrav** | Backend: MCP servers (calendar, gmail), registry |
 | **C** | **Samarth Anil** | AI integration: Gemini loop, engine, Guardian, injection |
 | **D** | **Pramegha M** | Data + API integration (finance, travel, price, SerpAPI), testing, pitch |
 
